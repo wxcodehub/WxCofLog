@@ -1,0 +1,6 @@
+{
+  "name": "WxCofLog",
+  "description": "Intelligent Supply Chain Assistant for UMKM coffee shops. Predicts stock, manages inventory, and suggests promotions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

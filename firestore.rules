@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) 
+        ? get(/databases/$(database)/documents/users/$(userId)).data 
+        : null;
+    }
+
+    function isMemberOfShop(shopId) {
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.currentShopId == shopId;
+    }
+
+    function hasRole(roleList) {
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in roleList;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidInventoryItem(data) {
+      return data.keys().hasAll(['item', 'stock', 'unit', 'category'])
+        && data.item is string && data.item.size() <= 128
+        && data.stock is number
+        && data.unit is string && data.unit.size() <= 30
+        && data.category in ['Beans', 'Milk', 'Sugar', 'Others', 'Packaging', 'Syrup']
+        && (!('exp_date' in data) || data.exp_date == null || (data.exp_date is string && data.exp_date.size() <= 50));
+    }
+
+    // --- Match Groups ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isUser(userId);
+      allow update: if isSignedIn() && (
+        isUser(userId) ||
+        (existing().get('currentShopId', null) != null && isMemberOfShop(existing().currentShopId) && hasRole(['owner']))
+      );
+    }
+
+    match /shops/{shopId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (isMemberOfShop(shopId) || resource.data.get('ownerId', '') == request.auth.uid);
+      
+      match /inventory/{itemId} {
+        allow list, get: if isMemberOfShop(shopId);
+        allow create: if isMemberOfShop(shopId) && hasRole(['owner', 'manager']) && isValidInventoryItem(incoming());
+        allow update: if isMemberOfShop(shopId) && isValidInventoryItem(incoming());
+        allow delete: if isMemberOfShop(shopId) && hasRole(['owner', 'manager']);
+      }
+
+      match /sales/{salesId} {
+        allow list, get: if isMemberOfShop(shopId);
+        allow create: if isMemberOfShop(shopId);
+        allow delete: if isMemberOfShop(shopId) && hasRole(['owner']);
+      }
+
+      match /restocks/{restockId} {
+        allow list, get: if isMemberOfShop(shopId);
+        allow create: if isMemberOfShop(shopId);
+        allow delete: if isMemberOfShop(shopId) && hasRole(['owner']);
+      }
+    }
+  }
+}
