@@ -1,0 +1,6 @@
+# Auto detect text files and normalize line endings
+* text=auto eol=lf
+
+# Explicitly mark generated files so GitHub Linguist focuses on real code
+package-lock.json linguist-generated=true
+dist/** linguist-vendored=true
